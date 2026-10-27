@@ -1,0 +1,65 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and verify in Debian Bookworm container (exact GCC 12.2)
+        run: |
+          docker run --rm -v "$PWD":/workspace -w /workspace debian:bookworm bash -c "
+            set -euo pipefail
+            apt-get update
+            apt-get install -y --no-install-recommends               gcc gcc-mipsel-linux-gnu binutils-mipsel-linux-gnu linux-libc-dev linux-libc-dev-mipsel-cross               qemu-user-static make python3
+            
+            make clean
+            make build-asm build-c build-c-mips
+            
+            echo '== Verify size ceiling =='
+            make check-size
+            
+            echo '== Verify ELF layout =='
+            python3 tools/check_elf.py final-4092/whitehttpd-mips32be whitehttpd_c/build/whitehttpd-nolibc-x86_64
+            
+            echo '== Verify exact documented sizes =='
+            ls -l final-4092/whitehttpd-mips32be whitehttpd_c/build/whitehttpd-nolibc-*
+            test \$(stat -c%s final-4092/whitehttpd-mips32be) -eq 4092
+            test \$(stat -c%s whitehttpd_c/build/whitehttpd-nolibc-x86_64) -eq 17008
+            test \$(stat -c%s whitehttpd_c/build/whitehttpd-nolibc-mips32be) -eq 20892
+            test \$(stat -c%s whitehttpd_c/build/whitehttpd-nolibc-mips32el) -eq 20908
+            
+            echo '== Run full test suite =='
+            ./test_all.sh --mips
+          "
+
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p dist
+          cp final-4092/whitehttpd-mips32be dist/
+          cp whitehttpd_c/build/whitehttpd-nolibc-x86_64 dist/
+          cp whitehttpd_c/build/whitehttpd-nolibc-mips32be dist/
+          cp whitehttpd_c/build/whitehttpd-nolibc-mips32el dist/
+          cd dist
+          sha256sum whitehttpd-* > SHA256SUMS
+          cat SHA256SUMS
+          cd ..
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v1.0.0"
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG" 2>/dev/null || true
+          
+          gh release create "$TAG"             --target main             --title "whitehttpd 1.0.0"             --notes-file RELEASE_NOTES.md             dist/*

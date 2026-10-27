@@ -1,0 +1,12 @@
+*.o
+build/
+dist/
+reports/*.json
+reports/*.log
+tools/pkgs/
+tools/root/
+tools/bloaty-1.1/
+docs/doxygen/
+__pycache__/
+*.pyc
+final-4092/whitehttpd-mips32be

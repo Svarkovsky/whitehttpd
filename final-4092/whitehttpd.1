@@ -1,0 +1,196 @@
+.TH WHITEHTTPD 1 "2026-10-27" "whitehttpd 1.0.0" "User Commands"
+.SH NAME
+whitehttpd \- a static file HTTP server that fits in one memory page
+.SH SYNOPSIS
+.B whitehttpd
+.RB [ \-\-port
+.IR port ]
+.RB [ \-\-daemon ]
+.RI [ wwwroot ]
+.SH DESCRIPTION
+.B whitehttpd
+serves files from
+.I wwwroot
+over HTTP. It is written in MIPS32 assembly and links against nothing: the
+whole server is a 4092 byte static binary that occupies a single 4096 byte
+memory page, so it loads in one page fault and never touches the heap.
+.PP
+The server speaks HTTP/1.0 and HTTP/1.1, keeps connections alive, and
+handles pipelined requests. It refuses to follow symbolic links and rejects
+path traversal, so files outside the document root cannot be read.
+.PP
+There is no help flag. This page is the documentation.
+.SH OPTIONS
+.TP
+.BI \-\-port " port"
+Listen on
+.IR port .
+Default 8080. The socket is dual-stack: a single
+.B AF_INET6
+listener with
+.B IPV6_V6ONLY
+cleared accepts both IPv4 and IPv6 connections.
+.TP
+.B \-\-daemon
+Detach from the terminal after binding. The process forks once, the parent
+exits, and the child continues in the background.
+.TP
+.I wwwroot
+Document root. The server
+.BR chdir (2)s
+into it at start. Default is the current directory. Any argument that starts
+with a hyphen and is not one of the options above is rejected with exit status 1.
+.SH BEHAVIOUR
+.TP
+.B Methods
+.B GET
+and
+.B HEAD.
+Anything else, and any malformed request line, gets
+.BR "501 Not Implemented" .
+.TP
+.B Index
+A request for a directory that contains
+.B index.html
+serves that file. A directory without it answers
+.BR "403 Forbidden" ;
+directory listings are not generated.
+.TP
+.B Redirect
+A request for a directory without a trailing slash answers
+.BR "301 Moved Permanently" ,
+with the raw request path plus a slash in
+.BR Location .
+Percent escapes are passed through unchanged.
+.TP
+.B Range
+A single
+.B Range
+header is honoured and answered with
+.BR "206 Partial Content" .
+Multiple ranges are ignored and the full body is returned, which
+RFC 7233 allows.
+.BR 416
+is returned when the first byte position is past the end of the file.
+.TP
+.B Content types
+Recognised by extension. The map is fixed, compiled in, 17 suffixes in three
+families:
+.RS
+.IP text/ 4
+html, htm, css, js, mjs, json, txt, md
+.IP application/ 4
+pdf, wasm, zip
+.IP image/ 4
+png, jpg, jpeg, gif, svg, ico
+.RE
+.IP
+.B charset=utf-8
+is appended to everything under
+.BR text/ ,
+and also to
+.BR js ,
+.B mjs
+and
+.BR json ,
+which are labelled
+.B application/javascript
+and
+.B application/json
+but are text as far as a charset is concerned. Any other extension gets
+.BR application/octet\-stream .
+.TP
+.B Headers
+Every response carries
+.BR "Server: whitehttpd" ,
+.BR Connection
+and
+.BR "Content\-Length" .
+There is no
+.BR Date ,
+no
+.BR ETag ,
+and no
+.BR Last\-Modified ,
+so a client cannot tell a fresh copy from a stale one except by asking again.
+Cacheable responses carry
+.BR "Cache\-Control: max\-age=60" .
+Successful file responses carry
+.BR "Accept\-Ranges: bytes" .
+.TP
+.B Limits
+The request header must fit in 8192 bytes; anything longer is answered with
+.BR "400 Bad Request" .
+The URL part is capped at 1024 bytes. A connection that stays silent for
+3 seconds is closed. Transfers run under a deadline so a stalled peer cannot
+hold a worker forever.
+.TP
+.B Security
+Symbolic links are refused at every path component, not just the last one,
+so a link to an intermediate directory cannot escape the root. Both
+.B /..
+and encoded traversal are rejected with
+.BR "403 Forbidden" .
+A header line that begins with whitespace, or contains a bare CR, is rejected
+with
+.BR "400 Bad Request" .
+.SH SIGNALS
+.B SIGPIPE
+is ignored at startup, through
+.BR rt_sigaction (2).
+Without this the server would die the first time a client closes its end of
+the connection while a response is still being written, because every write to
+a closed socket raises the signal and its default action kills the process.
+.PP
+.B SIGTERM
+and
+.B SIGINT
+are not handled. Use those to stop the server.
+.SH FILES
+None. Configuration is the command line alone.
+.SH EXAMPLES
+Serve the current directory on port 8080:
+.PP
+.RS
+.nf
+whitehttpd
+.fi
+.RE
+.PP
+Serve
+.I /www
+on port 80 as a background daemon:
+.PP
+.RS
+.nf
+whitehttpd --port 80 --daemon /www
+.fi
+.RE
+.PP
+Check that it answers, over IPv4 and over IPv6:
+.PP
+.RS
+.nf
+printf 'GET / HTTP/1.0\\r\\nHost: x\\r\\n\\r\\n' | nc 127.0.0.1 8080
+printf 'GET / HTTP/1.0\\r\\nHost: x\\r\\n\\r\\n' | nc ::1 8080
+.fi
+.RE
+.SH LIMITATIONS
+No TLS, no directory listing, no authentication, no chroot or privilege drop,
+no dotfile filtering, no access log, no ETag or Last-Modified, no CGI, no
+compression, no HTTP/2, no configuration file, no
+.B \-\-addr
+to bind a specific address. This is a server for public static files on a
+trusted host in a directory with no secrets in it. It is not a replacement for
+nginx or Apache.
+.SH EXIT STATUS
+1 on a usage error, or when any of
+.BR socket (2),
+.BR bind (2),
+.BR chdir (2),
+.BR listen (2)
+fails. Otherwise the process runs until it is killed; it installs no exit path
+of its own.
+.SH SEE ALSO
+.BR httpd (8),
+.BR nginx (8)

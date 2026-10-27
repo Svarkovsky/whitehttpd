@@ -1,0 +1,26 @@
+whitehttpd
+Copyright (c) Ivan Svarkovsky <ivansvarkovsky@gmail.com>
+
+This product is licensed under the GNU Affero General Public License v3.0 or
+later (AGPL-3.0-or-later). The full text is in LICENSE.
+
+A commercial license is available for vendors who cannot accept the copyleft.
+Contact: Ivan Svarkovsky <ivansvarkovsky@gmail.com>
+
+---
+
+Third party code
+----------------
+
+whitehttpd_c/third_party/nolibc
+
+    Source:  https://github.com/lkl/linux, tools/include/nolibc
+    License: LGPL-2.1 OR MIT, per the SPDX header of every file
+    This tree uses the LGPL-2.1 option. Text: LICENSES/LGPL-2.1-only.txt
+    The MIT option is reproduced for completeness: LICENSES/MIT.txt
+    Modifications: the version in this tree is unmodified. whitehttpd calls
+    it through wsock.h, which is original code.
+
+No other third-party code is included. The assembler reference in final-4092
+and the server code in whitehttpd_c are original work, written against the
+Linux system call ABI documented in the kernel sources.
