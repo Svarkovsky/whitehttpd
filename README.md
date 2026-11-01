@@ -1,3 +1,4 @@
+
 # whitehttpd
 
 Two independent HTTP servers in one tree. Both are written from scratch for the
@@ -13,8 +14,8 @@ embedded Linux architecture (including x86-64, MIPS BE/LE, ARM/AArch64, and RISC
 | `whitehttpd_c/` | same source | MIPS32 **BE** | **20 892** |
 | `whitehttpd_c/` | same source | MIPS32 **LE** | **20 908** |
 
-Author: Ivan Svarkovsky &lt;<ivansvarkovsky@gmail.com>&gt;
-License: AGPL-3.0-or-later, commercial license available. See [License](#5-license-and-legal-model).
+Author: Ivan Svarkovsky <<ivansvarkovsky@gmail.com>>  
+License: AGPL-3.0-or-later, commercial license available. See [License](#6-license-and-legal-model).
 
 ---
 
@@ -119,25 +120,38 @@ Full instructions, toolchain versions and every rejected optimisation are in
 
 All pass under `qemu-user` for both MIPS byte orders.
 
-## 5. License and Legal Model
+---
+
+## 5. Security and Memory Safety
+
+Dynamic runtime sanitizers (like ASan) target heap corruption bugs and require libc runtime support (`libasan`). In `whitehttpd`, memory safety is achieved **by construction at the architectural level**:
+
+- **Zero-Heap Policy**: Dynamic memory allocation is strictly excluded (`malloc`, `calloc`, and `free` do not exist in the codebase). Entire classes of vulnerabilities — use-after-free, double-free, and heap-overflow — are physically impossible.
+- **Static Bounds Enforcement**: All connection contexts and request buffers reside in `.bss` with fixed capacities. Every byte write is guarded by strict unsigned bounds checks.
+- **Binary Hardening**: Built with non-executable stack (`-Wl,-z,noexecstack`), strict separation of executable (RX) and writable (RW) ELF segments (0 RWX segments), and step-by-step path validation with `O_NOFOLLOW` on every component.
+- **Black-Box Validation**: The test suite verifies traversal (`/../`), symlink escapes, HTTP request smuggling (`Transfer-Encoding`, multiple `Content-Length`), and slowloris timeouts against running processes across all supported architectures.
+
+---
+
+## 6. License and Legal Model
 
 The `whitehttpd` project operates under a **Dual-Licensing** model, providing an open-source pathway for the community and commercial licensing for hardware manufacturers:
 
-### 5.1 Open Source License (GNU AGPLv3)
+### 6.1 Open Source License (GNU AGPLv3)
 The reference source code is published under the GNU Affero General Public License v3 ([SPDX: `AGPL-3.0-or-later`](https://spdx.org/licenses/AGPL-3.0-or-later.html)).
 - Strong network copyleft: modifying, integrating, or running the server within derivative network infrastructure requires distributing the complete corresponding source code under the same AGPLv3 terms.
 
-### 5.2 Commercial OEM License
+### 6.2 Commercial OEM License
 Designed for original equipment manufacturers (OEMs), router vendors, IoT devices, IP cameras, and proprietary embedded Linux firmware distributions (OpenWrt, Padavan, ASUSWRT):
 - Fully waives all AGPLv3 copyleft and source-disclosure obligations.
 - Grants perpetual rights to embed `whitehttpd` binaries and source code into proprietary, closed-source commercial firmware and products.
-- For commercial licensing inquiries and OEM integration: **Ivan Svarkovsky** &lt;[ivansvarkovsky@gmail.com](mailto:ivansvarkovsky@gmail.com)&gt;.
+- For commercial licensing inquiries and OEM integration: **Ivan Svarkovsky** <[ivansvarkovsky@gmail.com](mailto:ivansvarkovsky@gmail.com)>.
 
-### 5.3 Contributor License Agreement (CLA)
+### 6.3 Contributor License Agreement (CLA)
 All exclusive proprietary and commercial rights to the codebase are retained by the author (Ivan Svarkovsky). External contributions and patches are accepted strictly under a Contributor License Agreement to preserve the legal integrity and commercial relicensing authority of the project.
 
-### 5.4 Clean-Room Implementation Declaration (Independence from darkhttpd)
-The `whitehttpd` server (both the MIPS32 assembly implementation `whitehttpd.s` / `whitehttpd.s` and the freestanding C implementation `httpd.c` + `wsock.h`) is an independent, clean-room implementation. It is **not** a fork, derivative work, or port of `darkhttpd` (Emil Mikulic, ISC License) and carries zero licensing obligations toward it based on the following:
+### 6.4 Clean-Room Implementation Declaration (Independence from darkhttpd)
+The `whitehttpd` server (both the MIPS32 assembly implementation `whitehttpd.s` and the freestanding C implementation `httpd.c` + `wsock.h`) is an independent, clean-room implementation. It is **not** a fork, derivative work, or port of `darkhttpd` (Emil Mikulic, ISC License) and carries zero licensing obligations toward it based on the following:
 - **0% Shared Code**: Not a single line of code, data structure, algorithm, or function is copied or derived from `darkhttpd.c`. The entire codebase was designed and written from scratch.
 - **Architectural Divergence**:
   - `darkhttpd` relies on libc, single-threaded `poll()`, dynamic heap allocation (`malloc`, `realloc`, `free`), and string formatting via `snprintf`.
@@ -145,7 +159,9 @@ The `whitehttpd` server (both the MIPS32 assembly implementation `whitehttpd.s` 
 - Third-party components and license notices are tracked in [NOTICE](NOTICE) and [LICENSES/](LICENSES/).
 - Security policy: [SECURITY.md](SECURITY.md).
 
-## 6. Scope
+---
+
+## 7. Scope
 
 Not a drop-in replacement for nginx or Apache. Both servers answer a deliberately
 narrow contract: serve static files from one directory, safely, with a small
