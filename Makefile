@@ -25,6 +25,9 @@ build-c:
 build-c-mips:
 	$(MAKE) -C whitehttpd_c mipsbe mipsel
 
+build-c-arm:
+	$(MAKE) -C whitehttpd_c armv7
+
 check-size: 
 	$(MAKE) -C final-4092 check-size
 

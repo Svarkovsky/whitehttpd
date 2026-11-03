@@ -1,4 +1,3 @@
-
 # whitehttpd
 
 Two independent HTTP servers in one tree. Both are written from scratch for the
@@ -10,11 +9,12 @@ embedded Linux architecture (including x86-64, MIPS BE/LE, ARM/AArch64, and RISC
 | Directory | Product | Arch | Size |
 | --- | --- | --- | ---: |
 | `final-4092/` | whitehttpd (final-4092 as MIPS BE) | MIPS32r2 **BE** only | **4 092** |
-| `whitehttpd_c/` | full-feature server | x86-64 | **17 008** |
-| `whitehttpd_c/` | same source | MIPS32 **BE** | **20 892** |
-| `whitehttpd_c/` | same source | MIPS32 **LE** | **20 908** |
+| `whitehttpd_c/` | full-feature server | x86-64 | **17 424** |
+| `whitehttpd_c/` | same source | MIPS32 **BE** | **21 324** |
+| `whitehttpd_c/` | same source | MIPS32 **LE** | **21 340** |
+| `whitehttpd_c/` | same source | ARMv7-A (Cortex-A8) | **20 604** |
 
-Author: Ivan Svarkovsky <<ivansvarkovsky@gmail.com>>  
+Author: Ivan Svarkovsky &lt;<ivansvarkovsky@gmail.com>&gt;
 License: AGPL-3.0-or-later, commercial license available. See [License](#6-license-and-legal-model).
 
 ---
@@ -34,7 +34,7 @@ lines. The whole binary fits one 4096-byte memory page and one TLB entry.
 - 14 MIME types, `charset=utf-8` appended for `text/*`
 - symlink and path-traversal protection: `O_NOFOLLOW` on every path component
 - IPv6 dual-stack: one `AF_INET6` socket with `IPV6_V6ONLY=0` serves both families
-- `epoll` event loop, request timeout 3 s
+- `epoll` event loop, request timeout 6 s
 - codes 200, 206, 301, 400, 403, 404, 501
 
 **Not supported by design**
@@ -47,18 +47,26 @@ lines. The whole binary fits one 4096-byte memory page and one TLB entry.
 - `OPTIONS` (answers 501)
 - CGI, compression, HTTP/2, config file
 
-Target: ASUS RT-AC57U V3, QCA5502, Linux 3.3.8, OpenWrt and Padavan class
+Target: ASUS RT-AC57U V3, QCA9563, Linux 3.3.8, OpenWrt and Padavan class
 firmware. Verified on real hardware, not only under emulation.
 
-## 2. `whitehttpd_c/` - full-feature server, three targets
+## 2. `whitehttpd_c/` - full-feature server, four targets
 
 Freestanding C on nolibc, one source tree, `src/httpd.c` plus `src/wsock.h`.
 
 | Target | Size |
 | --- | ---: |
-| `whitehttpd-nolibc-x86_64` | 17 008 |
-| `whitehttpd-nolibc-mips32be` | 20 892 |
-| `whitehttpd-nolibc-mips32el` | 20 908 |
+| `whitehttpd-nolibc-x86_64` | 17 424 |
+| `whitehttpd-nolibc-mips32be` | 21 324 |
+| `whitehttpd-nolibc-mips32el` | 21 340 |
+| `whitehttpd-nolibc-armv7` | 20 604 |
+
+> **Note on binary sizes in the `test` branch**:
+> The C profiles in this branch include universal runtime autodetection for vintage Linux 2.6+ kernels:
+> - Automatic fallback from `accept4()` to `accept()` + `fcntl(O_NONBLOCK)` on kernels lacking `accept4` (Linux < 2.6.28 or unwired syscalls).
+> - Dynamic fallback from dual-stack `AF_INET6` to pure `AF_INET` (IPv4) when the kernel is built without IPv6 support (`CONFIG_IPV6=n`).
+> 
+> This universal runtime adaptation costs +416 bytes on x86-64 and +432 bytes on 32-bit MIPS architectures compared to the baseline figures published in the technical paper (17 008 B / 20 892 B).
 
 **Everything the assembler version does** - `epoll`, dual-stack IPv6 over one
 `AF_INET6` socket with `IPV6_V6ONLY=0`, `Range` with `206`, codes 200/301/403/404 -
@@ -84,8 +92,8 @@ syscalls with no libc, own non-blocking state machines. No `malloc`, no
 
 TLS, CGI, compression, HTTP/2, config file, authentication.
 
-Out-of-the-box targets are configured and verified for x86-64 and MIPS32 O32 (BE and LE).
-Porting to additional Linux architectures (ARM, RISC-V) requires only adding the
+Out-of-the-box targets are configured and verified for x86-64, MIPS32 O32 (BE and LE), and ARMv7-A.
+Porting to additional Linux architectures (RISC-V) requires only adding the
 corresponding `arch-*.h` header from upstream Linux nolibc.
 
 ---
@@ -95,19 +103,16 @@ corresponding `arch-*.h` header from upstream Linux nolibc.
 ```sh
 make build          # assembler reference + x86-64 C build
 make build-c-mips   # adds both MIPS C targets
+make build-c-arm    # adds ARMv7 C target
 ./test_all.sh --mips
 ```
 
 Full instructions, toolchain versions and every rejected optimisation are in
 [BUILDING.md](BUILDING.md).
 
-### Measured on hardware
+For detailed benchmark methodology, hardware measurements on real router silicon, and the complete engineering chronicle, see the technical paper: [https://svarkovsky.github.io/whitehttpd-paper/](https://svarkovsky.github.io/whitehttpd-paper/).
 
-| Platform | CPU | Kernel | Workers | Load test | Peak RSS per worker |
-| --- | --- | --- | ---: | --- | --- |
-| x86-64 | Intel i5-3230M, 4 cores | 6.1.0 | 4 | 800/800, 754 rps | 20 kB |
-| ASUS RT-AC57U V3 | QCA5502, 1 core | 3.3.8 | 4 | 120/120 in 0.54 s, 300 in 0.63 s | 28 kB parent, 20 kB worker |
-| MediaTek MT7628 | 24KEc, 1 core | 3.4.113 | 4 | 120/120 in 0.57 s | 72-96 kB |
+For a detailed case study on vintage Linux 2.6.32 kernel quirks (no IPv6, unwired `accept4`, soft-float ABI): see [docs/CASE_STUDY_ARM_LINUX26.md](docs/CASE_STUDY_ARM_LINUX26.md).
 
 ## 4. Tests
 
@@ -145,21 +150,19 @@ The reference source code is published under the GNU Affero General Public Licen
 Designed for original equipment manufacturers (OEMs), router vendors, IoT devices, IP cameras, and proprietary embedded Linux firmware distributions (OpenWrt, Padavan, ASUSWRT):
 - Fully waives all AGPLv3 copyleft and source-disclosure obligations.
 - Grants perpetual rights to embed `whitehttpd` binaries and source code into proprietary, closed-source commercial firmware and products.
-- For commercial licensing inquiries and OEM integration: **Ivan Svarkovsky** <[ivansvarkovsky@gmail.com](mailto:ivansvarkovsky@gmail.com)>.
+- For commercial licensing inquiries and OEM integration: **Ivan Svarkovsky** &lt;[ivansvarkovsky@gmail.com](mailto:ivansvarkovsky@gmail.com)&gt;.
 
 ### 6.3 Contributor License Agreement (CLA)
 All exclusive proprietary and commercial rights to the codebase are retained by the author (Ivan Svarkovsky). External contributions and patches are accepted strictly under a Contributor License Agreement to preserve the legal integrity and commercial relicensing authority of the project.
 
 ### 6.4 Clean-Room Implementation Declaration (Independence from darkhttpd)
-The `whitehttpd` server (both the MIPS32 assembly implementation `whitehttpd.s` and the freestanding C implementation `httpd.c` + `wsock.h`) is an independent, clean-room implementation. It is **not** a fork, derivative work, or port of `darkhttpd` (Emil Mikulic, ISC License) and carries zero licensing obligations toward it based on the following:
+The `whitehttpd` server (both the MIPS32 assembly implementation `whitehttpd.s` / `whitehttpd.asm` and the freestanding C implementation `httpd.c` + `wsock.h`) is an independent, clean-room implementation. It is **not** a fork, derivative work, or port of `darkhttpd` (Emil Mikulic, ISC License) and carries zero licensing obligations toward it based on the following:
 - **0% Shared Code**: Not a single line of code, data structure, algorithm, or function is copied or derived from `darkhttpd.c`. The entire codebase was designed and written from scratch.
 - **Architectural Divergence**:
   - `darkhttpd` relies on libc, single-threaded `poll()`, dynamic heap allocation (`malloc`, `realloc`, `free`), and string formatting via `snprintf`.
   - `whitehttpd` uses zero heap allocations, zero libc dependencies, direct Linux kernel system calls (`syscall`), a non-blocking `epoll` multiplexer, multi-worker preforking, and dedicated static ring/state buffers in `.bss`.
 - Third-party components and license notices are tracked in [NOTICE](NOTICE) and [LICENSES/](LICENSES/).
 - Security policy: [SECURITY.md](SECURITY.md).
-
----
 
 ## 7. Scope
 

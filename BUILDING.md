@@ -21,6 +21,7 @@ figures in the documentation were produced with exactly these.
 | --- | --- |
 | gcc | 12.2.0 |
 | mipsel-linux-gnu-gcc | 12.2.0 |
+| arm-linux-gnueabihf-gcc | 12.2.0 |
 | GNU as, GNU ld | 2.40 |
 | Python | 3.11 |
 | qemu-user-static | 7.2.22 |
@@ -40,6 +41,7 @@ workflow uses a runner image that carries 2.42 or newer.
 make build-asm      # assembler reference, MIPS BE, 4092 bytes
 make build-c        # freestanding C, x86-64
 make build-c-mips   # freestanding C, MIPS32 BE and LE
+make build-c-arm    # freestanding C, ARMv7-A (Cortex-A8)
 make                # everything together
 ```
 
@@ -91,6 +93,7 @@ cd whitehttpd_c
 make                # build/whitehttpd-nolibc-x86_64
 make mipsbe         # build/whitehttpd-nolibc-mips32be
 make mipsel         # build/whitehttpd-nolibc-mips32el
+make armv7          # build/whitehttpd-nolibc-armv7
 ```
 
 Both byte orders come from one `mipsel-linux-gnu-gcc`; the only difference is
@@ -106,6 +109,11 @@ Flags that matter:
 `-fno-pic -fno-pie` keeps `.data.rel.ro` out of the writable segment, worth
 8.2 kB. `-Oz` is the smallest setting; every alternative measured larger. The
 table is in `whitehttpd_c/README.md`.
+
+For ARMv7-A cross-compilation (Soft-Float EABI):
+```sh
+sudo apt-get install gcc-arm-linux-gnueabihf
+```
 
 The cross kernel headers are needed for `asm/types.h`:
 

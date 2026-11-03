@@ -19,7 +19,13 @@ MIPS_BASE = -march=mips32r2 -mabi=32 -mno-abicalls -fno-pic -G 0 \
             -nostdlib -nostartfiles -static -no-pie \
             -Wl,--gc-sections -Wl,-s -Wl,-z,noseparate-code -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-e,__start
 
-.PHONY: all mipsel mipsbe clean
+CC_arm    ?= arm-linux-gnueabihf-gcc
+
+ARM_BASE  = -march=armv7-a -marm -mfloat-abi=soft \
+            -nostdlib -nostartfiles -static -no-pie \
+            -Wl,--gc-sections -Wl,-s -Wl,-z,noseparate-code -Wl,-z,noexecstack -Wl,--build-id=none -Wl,-e,_start
+
+.PHONY: all mipsel mipsbe armv7 clean
 
 all: build/whitehttpd-nolibc-x86_64
 
@@ -45,6 +51,14 @@ build/whitehttpd-nolibc-mips32el: src/httpd.c src/wsock.h $(wildcard third_party
 	$(CC_mips) $(COMMON) $(MIPS_BASE) -EL src/httpd.c -o $@
 	../tools/sstrip.py $@
 	ln -sf whitehttpd-nolibc-mips32el build/httpd.mipsel
+
+armv7: build/whitehttpd-nolibc-armv7
+
+build/whitehttpd-nolibc-armv7: src/httpd.c src/wsock.h $(wildcard third_party/nolibc/*.h third_party/nolibc/sys/*.h) ../tools/sstrip.py
+	mkdir -p build
+	$(CC_arm) $(COMMON) $(ARM_BASE) src/httpd.c -o $@ -lgcc
+	../tools/sstrip.py $@
+	ln -sf whitehttpd-nolibc-armv7 build/httpd.armv7
 
 clean:
 	rm -rf build

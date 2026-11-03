@@ -55,6 +55,13 @@
 #  define WS_SIGSETSIZE     16       /**< _NSIG is 128 on MIPS, 64 elsewhere. */
 #  define WS_EPOLL_PACKED
 #  define WS_SOCK_NONBLOCK  0x0080   /**< Non-blocking flag; differs on MIPS. */
+#elif defined(__arm__) || defined(__thumb__)
+#  define WS_SOCK_STREAM    1
+#  define WS_SOL_SOCKET     1
+#  define WS_SO_REUSEADDR   2
+#  define WS_SIGSETSIZE     8
+#  define WS_EPOLL_PACKED
+#  define WS_SOCK_NONBLOCK  0x0800
 #else
 /** @def WS_EPOLL_PACKED
  *  @brief Alignment attribute for ws_epoll_event.
@@ -75,6 +82,7 @@
  * @defgroup constants Values identical on every architecture
  * @{
  */
+#define WS_AF_INET          2    /**< IPv4 address family. */
 #define WS_AF_INET6         10   /**< IPv6 address family. */
 #define WS_IPPROTO_TCP      6    /**< TCP protocol level. */
 #define WS_TCP_NODELAY      1    /**< Disable Nagle. Without it a split header
@@ -111,6 +119,13 @@ struct ws_in6_addr {
  *  The server binds one of these and accepts into another, so the peer
  *  address of every connection arrives here.
  */
+struct ws_sockaddr_in {
+    unsigned short sin_family;
+    unsigned short sin_port;
+    unsigned int   sin_addr;
+    unsigned char  sin_zero[8];
+};
+
 struct ws_sockaddr_in6 {
     unsigned short     sin6_family;    /**< Always WS_AF_INET6. */
     unsigned short     sin6_port;      /**< Port in network byte order. */
@@ -139,6 +154,9 @@ struct ws_epoll_event {
 /** @cond MIPS_SIGACTION
  *  MIPS layout: sa_flags first, no sa_restorer.
  */
+#ifdef sa_handler
+#undef sa_handler
+#endif
 struct ws_sigaction {
     unsigned int   sa_flags;
     void         (*sa_handler)(int);
@@ -146,6 +164,9 @@ struct ws_sigaction {
 };
 /** @endcond */
 #else
+#ifdef sa_handler
+#undef sa_handler
+#endif
 struct ws_sigaction {
     /** @brief Handler. WS_SIG_IGN here, so the signal is ignored. */
     void         (*sa_handler)(int);
@@ -323,7 +344,7 @@ static inline int ws_socket(int domain, int type, int proto)
  * @param len  Size of @p addr in bytes.
  * @return 0 on success, -1 with errno set.
  */
-static inline int ws_bind(int fd, const struct ws_sockaddr_in6 *addr, int len)
+static inline int ws_bind(int fd, const void *addr, int len)
 {
     return __sysret(ws_syscall3(__NR_bind, fd, addr, len));
 }
@@ -349,7 +370,26 @@ static inline int ws_listen(int fd, int backlog)
  */
 static inline int ws_accept4(int fd, void *addr, int *len, int flags)
 {
-    return __sysret(ws_syscall4(__NR_accept4, fd, addr, len, flags));
+    static int no_accept4 = 0;
+    if (!no_accept4) {
+        long ret = ws_syscall4(__NR_accept4, fd, addr, len, flags);
+        if (ret != -38) /* -ENOSYS */
+            return __sysret(ret);
+        no_accept4 = 1;
+    }
+#ifdef __NR_accept
+    long c = ws_syscall3(__NR_accept, fd, addr, len);
+    if (c < 0) return __sysret(c);
+    if (flags & WS_SOCK_NONBLOCK) {
+        long fl = ws_syscall2(__NR_fcntl, c, 3 /* F_GETFL */);
+        if (fl >= 0)
+            ws_syscall3(__NR_fcntl, c, 4 /* F_SETFL */, fl | 0x800 /* O_NONBLOCK */);
+    }
+    return (int)c;
+#else
+    SET_ERRNO(38);
+    return -1;
+#endif
 }
 
 /**
@@ -539,6 +579,70 @@ static inline time_t ws_mips_time(time_t *tptr)
 }
 #define time(tptr) ws_mips_time(tptr)
 
+/* ================== ARM KERNEL STAT64 & TIME (Linux 2.6 - 6.x) ============
+ * nolibc uses sys_statx (4.11+) and clock_gettime64 (5.1+).
+ * Older kernels like Linux 2.6.32 lack both.
+ * We invoke sys_stat64 and sys_gettimeofday.
+ */
+#elif defined(__arm__) || defined(__thumb__)
+struct ws_stat64 {
+    unsigned long long st_dev;
+    unsigned char      __pad0[4];
+    unsigned long      __st_ino;
+    unsigned int       st_mode;
+    unsigned int       st_nlink;
+    unsigned long      st_uid;
+    unsigned long      st_gid;
+    unsigned long long st_rdev;
+    unsigned char      __pad3[4];
+    long long          st_size;
+    unsigned long      st_blksize;
+    unsigned long long st_blocks;
+    unsigned long      st_atime;
+    unsigned long      st_atime_nsec;
+    unsigned long      st_mtime;
+    unsigned long      st_mtime_nsec;
+    unsigned long      st_ctime;
+    unsigned long      st_ctime_nsec;
+    unsigned long long st_ino;
+};
+
+static inline int ws_stat(const char *path, struct stat *buf)
+{
+    struct ws_stat64 kst;
+    long ret = ws_syscall2(__NR_stat64, path, &kst);
+    if (ret < 0) {
+        SET_ERRNO(-ret);
+        return -1;
+    }
+    buf->st_mode = kst.st_mode;
+    buf->st_size = kst.st_size;
+    buf->st_mtime = (time_t)kst.st_mtime;
+    return 0;
+}
+#define stat(path, buf) ws_stat(path, buf)
+
+static inline int ws_fstat(int fd, struct stat *buf)
+{
+    struct ws_stat64 kst;
+    long ret = ws_syscall2(__NR_fstat64, fd, &kst);
+    if (ret < 0) { SET_ERRNO(-ret); return -1; }
+    buf->st_mode = kst.st_mode;
+    buf->st_size = kst.st_size;
+    buf->st_mtime = (time_t)kst.st_mtime;
+    return 0;
+}
+#define fstat(fd, buf) ws_fstat(fd, buf)
+
+static inline time_t ws_arm_time(time_t *tptr)
+{
+    struct { long tv_sec; long tv_usec; } tv;
+    long ret = ws_syscall2(__NR_gettimeofday, &tv, 0);
+    if (ret < 0) return 0;
+    if (tptr) *tptr = (time_t)tv.tv_sec;
+    return (time_t)tv.tv_sec;
+}
+#define time(tptr) ws_arm_time(tptr)
 #endif
 
 #endif /* WSOCK_H */

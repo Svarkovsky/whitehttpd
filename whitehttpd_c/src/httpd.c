@@ -1072,10 +1072,25 @@ int main(int argc,char **argv) {
     root_fd=open(root,O_RDONLY|O_DIRECTORY,0);if(root_fd<0)return log_error("cannot open document root\n");
     if(!now_sec())return log_error("CLOCK_MONOTONIC unavailable\n");
     if(ws_ignore_signal(WS_SIGPIPE)<0||ws_ignore_signal(WS_SIGCHLD)<0)return 3;
-    listen_fd=ws_socket(WS_AF_INET6,WS_SOCK_STREAM|WS_SOCK_NONBLOCK,0);if(listen_fd<0)return 4;
-    if(ws_setsockopt(listen_fd,WS_IPPROTO_IPV6,WS_IPV6_V6ONLY,&zero,sizeof zero)<0||
-       ws_setsockopt(listen_fd,WS_SOL_SOCKET,WS_SO_REUSEADDR,&one,sizeof one)<0)return 4;
-    if(ws_bind(listen_fd,&addr,sizeof addr)<0||ws_listen(listen_fd,128)<0)return 5;
+    int is_v4 = 0;
+    listen_fd=ws_socket(WS_AF_INET6,WS_SOCK_STREAM|WS_SOCK_NONBLOCK,0);
+    if(listen_fd<0) {
+        struct ws_sockaddr_in v4;
+        memset(&v4,0,sizeof v4);
+        v4.sin_family=WS_AF_INET;
+        v4.sin_port=addr.sin6_port;
+        if(addr.sin6_addr.b[10]==255 && addr.sin6_addr.b[11]==255)
+            memcpy(&v4.sin_addr,addr.sin6_addr.b+12,4);
+        listen_fd=ws_socket(WS_AF_INET,WS_SOCK_STREAM|WS_SOCK_NONBLOCK,0);
+        if(listen_fd<0)return 4;
+        if(ws_setsockopt(listen_fd,WS_SOL_SOCKET,WS_SO_REUSEADDR,&one,sizeof one)<0)return 4;
+        if(ws_bind(listen_fd,&v4,sizeof v4)<0||ws_listen(listen_fd,128)<0)return 5;
+        is_v4=1;
+    } else {
+        if(ws_setsockopt(listen_fd,WS_IPPROTO_IPV6,WS_IPV6_V6ONLY,&zero,sizeof zero)<0||
+           ws_setsockopt(listen_fd,WS_SOL_SOCKET,WS_SO_REUSEADDR,&one,sizeof one)<0)return 4;
+        if(ws_bind(listen_fd,&addr,sizeof addr)<0||ws_listen(listen_fd,128)<0)return 5;
+    }
     if(log_path) {
         log_fd=open(log_path,O_WRONLY|O_CREAT|O_APPEND,0644);
         if(log_fd<0)return log_error("cannot open log file\n");
@@ -1118,7 +1133,14 @@ int main(int argc,char **argv) {
                     if(c<0){if(errno==EINTR)continue;break;}
                     if(c>=MAXFD){close(c);continue;}
                     memset(&con[c],0,sizeof con[c]);con[c].state=READING;con[c].file=con[c].page=-1;
-                    memcpy(con[c].peer,sa.sin6_addr.b,16);con[c].o_method=con[c].o_target=-1;
+                    if(is_v4 || sa.sin6_family == WS_AF_INET) {
+                        struct ws_sockaddr_in *v4 = (struct ws_sockaddr_in *)&sa;
+                        memset(con[c].peer,0,10);con[c].peer[10]=con[c].peer[11]=255;
+                        memcpy(con[c].peer+12,&v4->sin_addr,4);
+                    } else {
+                        memcpy(con[c].peer,sa.sin6_addr.b,16);
+                    }
+                    con[c].o_method=con[c].o_target=-1;
                     con[c].progress=con[c].started=now_sec();
                     ws_setsockopt(c,WS_IPPROTO_TCP,WS_TCP_NODELAY,&one,sizeof one);
                     ev.events=WS_EPOLLIN;ev.data=(unsigned long long)c;
