@@ -101,13 +101,7 @@ make build-c-mips   # adds both MIPS C targets
 Full instructions, toolchain versions and every rejected optimisation are in
 [BUILDING.md](BUILDING.md).
 
-### Measured on hardware
-
-| Platform | CPU | Kernel | Workers | Load test | Peak RSS per worker |
-| --- | --- | --- | ---: | --- | --- |
-| x86-64 | Intel i5-3230M, 4 cores | 6.1.0 | 4 | 800/800, 754 rps | 20 kB |
-| ASUS RT-AC57U V3 | QCA5502, 1 core | 3.3.8 | 4 | 120/120 in 0.54 s, 300 in 0.63 s | 28 kB parent, 20 kB worker |
-| MediaTek MT7628 | 24KEc, 1 core | 3.4.113 | 4 | 120/120 in 0.57 s | 72-96 kB |
+For detailed benchmark methodology, hardware measurements on real router silicon, and the complete engineering chronicle, see the technical paper: [https://svarkovsky.github.io/whitehttpd-paper/](https://svarkovsky.github.io/whitehttpd-paper/).
 
 ## 4. Tests
 
